@@ -1,0 +1,93 @@
+import time
+from concurrent.futures import ThreadPoolExecutor
+from abc import ABC, abstractmethod
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options as ChromeOptions
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+
+# --- WebDriver Factory ---
+class WebDriverFactory:
+    @staticmethod
+    def get_driver(browser: str = "chrome", headless: bool = False):
+        """
+        Returns a new Selenium WebDriver instance based on browser type.
+        For demonstration, we use Chrome.
+        """
+        if browser.lower() == "chrome":
+            options = ChromeOptions()
+            if headless:
+                options.add_argument("--headless")
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+            return driver
+        else:
+            raise ValueError(f"Unsupported browser: {browser}")
+
+# --- Base InvoiceProcessor using Template Method Pattern ---
+class InvoiceProcessor(ABC):
+    @abstractmethod
+    def process_invoice(self, task_id):
+        pass
+
+# --- TestSearchProcessor: Our Dummy Test Processor for Wikipedia ---
+class TestSearchProcessor(InvoiceProcessor):
+    def process_invoice(self, task_id):
+        # Create a new driver instance for this task.
+        driver = WebDriverFactory.get_driver(browser="chrome", headless=False)
+        try:
+            print(f"[{task_id}] Driver created with unique id: {id(driver)}", flush=True)
+            print(f"[{task_id}] Navigating to Club Penguin Wikipedia page...", flush=True)
+            driver.get("https://en.wikipedia.org/wiki/Club_Penguin")
+            time.sleep(1)  # Allow time for the page to load
+
+            # Extract text from the h1 element on the page.
+            header = driver.find_element(By.TAG_NAME, "h1")
+            print(f"[{task_id}] Extracted h1 text: {header.text}", flush=True)
+
+            # Extra delay to allow you to see the browser window before closing it.
+            print(f"[{task_id}] Waiting for 10 seconds before quitting the driver...", flush=True)
+            time.sleep(10)
+        except Exception as e:
+            print(f"[{task_id}] Encountered an error: {e}", flush=True)
+        finally:
+            driver.quit()
+            print(f"[{task_id}] Driver quit.", flush=True)
+
+# --- ThreadPool Factory ---
+class ThreadPoolFactory:
+    @staticmethod
+    def get_thread_pool(max_workers: int = 5) -> ThreadPoolExecutor:
+        """
+        Creates and returns a ThreadPoolExecutor with the specified number of workers.
+        """
+        return ThreadPoolExecutor(max_workers=max_workers)
+
+# --- Controller to Assign Tasks to Worker Threads ---
+class InvoiceProcessingController:
+    def __init__(self, processor: InvoiceProcessor, max_workers: int = 5):
+        self.processor = processor
+        self.thread_pool = ThreadPoolFactory.get_thread_pool(max_workers)
+
+    def process_invoices(self, task_ids):
+        """
+        Maps each task id to the processing function using the thread pool.
+        """
+        self.thread_pool.map(self.processor.process_invoice, task_ids)
+        self.thread_pool.shutdown(wait=True)
+        print("All tasks have been processed.", flush=True)
+
+# --- Main Execution ---
+if __name__ == '__main__':
+    # Create an instance of our test processor.
+    test_processor = TestSearchProcessor()
+
+    # Create a controller with a pool of 5 worker threads.
+    controller = InvoiceProcessingController(test_processor, max_workers=5)
+
+    # Create a list of 5 dummy task IDs.
+    task_ids = [f"Task-{i}" for i in range(1, 6)]
+
+    # Process the tasks concurrently.
+    controller.process_invoices(task_ids)
